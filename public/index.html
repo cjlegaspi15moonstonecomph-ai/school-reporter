@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Report</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 p-6">
+
+<div class="max-w-lg mx-auto bg-white p-6 rounded-xl shadow-lg">
+  
+  <h1 class="text-3xl font-bold mb-6 text-center text-blue-600">
+    Submit a Report
+  </h1>
+
+  <form id="reportForm" class="space-y-4" enctype="multipart/form-data">
+
+    <!-- Name -->
+    <div>
+      <label class="font-semibold text-gray-700">Your Name (Optional)</label>
+      <input 
+        type="text" 
+        id="name" 
+        name="name" 
+        placeholder="Enter your name"
+        class="w-full border px-3 py-2 rounded mt-1"
+      >
+    </div>
+
+    <!-- Report Type -->
+    <div>
+      <label class="font-semibold text-gray-700">Report Type</label>
+      <select 
+        id="type" 
+        name="type" 
+        class="w-full border px-3 py-2 rounded mt-1" 
+        required
+      >
+        <option value="">Select a type</option>
+        <option value="Bullying">Bullying</option>
+        <option value="Harassment">Harassment</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+
+    <!-- Description -->
+    <div>
+      <label class="font-semibold text-gray-700">Description</label>
+      <textarea 
+        id="description" 
+        name="description"
+        placeholder="Describe what happened..."
+        class="w-full border px-3 py-2 rounded mt-1 h-28"
+        required
+      ></textarea>
+    </div>
+
+    <!-- File Upload -->
+    <div>
+      <label class="font-semibold text-gray-700 block">
+        Upload Evidence (Images/Videos, max 5 files)
+      </label>
+      <input 
+        type="file" 
+        id="files" 
+        name="files"
+        class="mt-2 block w-full border rounded p-2 bg-gray-50"
+        multiple 
+        accept="image/*,video/*"
+      >
+    </div>
+
+    <!-- Submit -->
+    <button 
+      type="submit" 
+      class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
+    >
+      Submit Report
+    </button>
+  </form>
+
+  <p id="msg" class="mt-4 text-center font-semibold"></p>
+
+</div>
+
+<script>
+document.getElementById('reportForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const form = document.getElementById('reportForm');
+  const formData = new FormData(form);
+
+  try {
+    const res = await fetch('/api/report', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      document.getElementById('msg').innerText = 'Report submitted successfully!';
+      document.getElementById('msg').classList = 'text-green-600 font-semibold text-center';
+      form.reset();
+    } else {
+      document.getElementById('msg').innerText = data.message || 'Failed to submit';
+      document.getElementById('msg').classList = 'text-red-600 font-semibold text-center';
+    }
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('msg').innerText = 'Server error';
+    document.getElementById('msg').classList = 'text-red-600 font-semibold text-center';
+  }
+});
+</script>
+
+</body>
+</html>

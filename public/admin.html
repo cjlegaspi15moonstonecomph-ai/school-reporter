@@ -26,15 +26,21 @@
     <button id="logoutBtn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Logout</button>
   </div>
 
+  <!-- Filters -->
   <div class="mb-6 grid grid-cols-1 md:grid-cols-6 gap-3">
     <input type="text" id="q" placeholder="Search by name/type/ID" class="border px-3 py-2 rounded col-span-2">
     <input type="date" id="dateFrom" class="border px-3 py-2 rounded">
     <input type="date" id="dateTo" class="border px-3 py-2 rounded">
     <select id="typeFilter" class="border px-3 py-2 rounded">
       <option value="">All Types</option>
-      <option value="Bullying">Bullying</option>
-      <option value="Harassment">Harassment</option>
-      <option value="Other">Other</option>
+      <option>Physical Violence</option>
+      <option>Theft</option>
+      <option>Vandalism</option>
+      <option>Cyber Incident</option>
+      <option>Student Misconduct</option>
+      <option>Substance Issue</option>
+      <option>Emergency or Safety Concern</option>
+      <option>Other</option>
     </select>
     <button id="searchBtn" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Filter</button>
     <button id="resetBtn" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Reset</button>
@@ -48,8 +54,14 @@
 </div>
 
 <script>
-const showLogin = () => { document.getElementById('loginBox').classList.remove('hidden'); document.getElementById('adminApp').classList.add('hidden'); }
-const showApp = () => { document.getElementById('loginBox').classList.add('hidden'); document.getElementById('adminApp').classList.remove('hidden'); }
+const showLogin = () => { 
+  document.getElementById('loginBox').classList.remove('hidden'); 
+  document.getElementById('adminApp').classList.add('hidden'); 
+};
+const showApp = () => { 
+  document.getElementById('loginBox').classList.add('hidden'); 
+  document.getElementById('adminApp').classList.remove('hidden'); 
+};
 
 async function checkSession(){
   try {
@@ -63,6 +75,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const username = document.getElementById('username').value;
   const password = document.getElementById('password').value;
+
   try {
     const res = await fetch('/admin/login', {
       method:'POST',
@@ -87,6 +100,7 @@ document.getElementById('logoutBtn').addEventListener('click', async ()=>{
   showLogin();
 });
 
+/* LOAD REPORTS */
 async function loadReports(){
   const q = document.getElementById('q').value;
   const dateFrom = document.getElementById('dateFrom').value;
@@ -101,10 +115,9 @@ async function loadReports(){
     list.innerHTML = '';
 
     data.forEach(r=>{
-      const typeColor = r.type==='Bullying'?'bg-red-200 text-red-800':r.type==='Harassment'?'bg-yellow-200 text-yellow-800':'bg-blue-200 text-blue-800';
       const d = document.createElement('div');
       d.className = 'bg-white rounded-lg shadow p-5 border-l-4 border-gray-300 hover:shadow-lg transition';
-      
+
       let filesHTML = '';
       if(r.files && r.files.length){
         filesHTML = r.files.map(f=>{
@@ -120,17 +133,35 @@ async function loadReports(){
       d.innerHTML = `
         <div class="flex justify-between items-center mb-2">
           <span class="font-semibold text-gray-700">#${r.id}</span>
-          <span class="px-2 py-1 rounded text-sm ${typeColor}">${r.type}</span>
+          <span class="px-2 py-1 rounded text-sm bg-blue-200 text-blue-800">${r.type}</span>
         </div>
-        <div class="text-gray-700 mb-2"><strong>Name:</strong> ${r.anonymous?'<em>Anonymous</em>':(r.name||'N/A')}</div>
-        <div class="text-gray-800 mb-2"><strong>Report:</strong> ${(r.text||'').replace(/</g,'&lt;')}</div>
+
+        <div class="text-gray-700 mb-2">
+          <strong>Name:</strong> ${r.anonymous ? '<em>Anonymous</em>' : (r.name || 'N/A')}
+        </div>
+
+        <div class="text-gray-700 mb-2">
+          <strong>Location:</strong> ${r.place || 'Not provided'}
+        </div>
+
+        <div class="text-gray-700 mb-2">
+          <strong>Grade Level:</strong> ${r.grade || 'Not provided'}
+        </div>
+
+        <div class="text-gray-800 mb-2">
+          <strong>Description:</strong> ${(r.text || '').replace(/</g,'&lt;')}
+        </div>
+
         <div class="text-gray-500 text-sm mb-2">${new Date(r.date).toLocaleString()}</div>
+
         <div class="mb-2">${filesHTML}</div>
       `;
+
       list.appendChild(d);
     });
 
     document.getElementById('downloadLink').href = '/admin/download?' + params.toString();
+
   } catch(e){
     console.error(e);
   }
@@ -145,6 +176,5 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   loadReports();
 });
 </script>
-
 </body>
 </html>

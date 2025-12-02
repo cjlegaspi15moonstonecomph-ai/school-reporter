@@ -3,14 +3,15 @@ import session from 'express-session';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { stringify } from 'csv-stringify';
 import multer from 'multer';
+import { stringify } from 'csv-stringify';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ----- Session -----
@@ -27,7 +28,7 @@ const ADMIN_PASS = '1234';
 
 // ----- Storage for uploaded files -----
 const uploadDir = path.join(__dirname, 'uploads');
-if(!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -42,11 +43,11 @@ const upload = multer({ storage });
 app.use('/uploads', express.static(uploadDir));
 
 // ----- Helper functions -----
-function loadReports(){
-  if(!fs.existsSync('reports.json')) fs.writeFileSync('reports.json','[]');
+function loadReports() {
+  if (!fs.existsSync('reports.json')) fs.writeFileSync('reports.json','[]');
   return JSON.parse(fs.readFileSync('reports.json','utf8'));
 }
-function saveReports(reports){
+function saveReports(reports) {
   fs.writeFileSync('reports.json', JSON.stringify(reports,null,2));
 }
 
@@ -79,6 +80,8 @@ app.post('/api/report', upload.array('files',5), (req,res)=>{
       anonymous: !req.body.name,
       type: req.body.type || 'Other',
       text: req.body.description || '',
+      place: req.body.place || null,
+      grade: req.body.grade || null,
       date: new Date().toISOString(),
       files
     };
@@ -100,9 +103,11 @@ app.post('/admin/login', (req,res)=>{
   }
   return res.status(401).json({ message:'Invalid credentials' });
 });
+
 app.get('/admin/logout', (req,res)=>{
   req.session.destroy(()=>res.json({ message:'logged out' }));
 });
+
 app.get('/admin/check', (req,res)=>{
   if(req.session.admin) return res.json({ ok:true });
   return res.status(401).json({ ok:false });
@@ -151,6 +156,8 @@ app.get('/admin/download', requireAdmin, (req,res)=>{
     type:r.type,
     anonymous:r.anonymous,
     name:r.name||'',
+    grade: r.grade || '',
+    place: r.place || '',
     text:r.text,
     files: r.files ? r.files.join('|') : ''
   }));

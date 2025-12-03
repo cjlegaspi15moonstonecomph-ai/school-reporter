@@ -67,7 +67,8 @@ const showApp = () => {
 async function checkSession(){
   try {
     const res = await fetch('/api/admin/check', { credentials: 'include' });
-    if(res.ok) showApp(); else showLogin();
+    if(res.ok) showApp(); 
+    else showLogin();
   } catch(e){ showLogin(); }
 }
 checkSession();
@@ -120,12 +121,14 @@ async function loadReports(){
     list.innerHTML = '';
 
     data.forEach(r=>{
+      const files = r.files || []; // already array from server
+
       const d = document.createElement('div');
       d.className = 'bg-white rounded-lg shadow p-5 border-l-4 border-gray-300 hover:shadow-lg transition';
 
       let filesHTML = '';
-      if(r.files && r.files.length){
-        filesHTML = r.files.map(f=>{
+      if(files.length){
+        filesHTML = files.map(f=>{
           const ext = f.split('.').pop().toLowerCase();
           if(['mp4','webm','ogg'].includes(ext)){
             return `<video controls class="max-w-full mb-2"><source src="${f}" type="video/${ext}"></video>`;
@@ -165,13 +168,15 @@ async function loadReports(){
       list.appendChild(d);
     });
 
+    // CSV download link
     document.getElementById('downloadLink').href = '/api/admin/download?' + params.toString();
 
   } catch(e){
-    console.error(e);
+    console.error('Error loading reports:', e);
   }
 }
 
+/* Filters */
 document.getElementById('searchBtn').addEventListener('click', ()=> loadReports());
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   document.getElementById('q').value='';
@@ -181,6 +186,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   loadReports();
 });
 </script>
+
 
 </body>
 </html>

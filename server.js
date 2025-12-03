@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { stringify } from 'csv-stringify';
+import Database from 'better-sqlite3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,72 +13,109 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ----- Session -----
 app.use(session({
-  secret: 'your-secret-key',
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: true,
   cookie: { maxAge: 24*60*60*1000 }
 }));
 
 // ----- Admin credentials -----
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '1234';
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASS || '1234';
 
-// ----- Storage for uploaded files -----
+// ----- Uploads folder -----
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(uploadDir));
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
+  destination: (req,file,cb) => cb(null, uploadDir),
+  filename: (req,file,cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random()*1e9);
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
 const upload = multer({ storage });
 
-// Serve uploaded files
-app.use('/uploads', express.static(uploadDir));
+// ----- Database -----
+const dbFile = path.join(__dirname, 'reports.db');
+const db = new Database(dbFile);
 
-// ----- Helper functions -----
-function loadReports() {
-  if (!fs.existsSync('reports.json')) fs.writeFileSync('reports.json','[]');
-  return JSON.parse(fs.readFileSync('reports.json','utf8'));
-}
-function saveReports(reports) {
-  fs.writeFileSync('reports.json', JSON.stringify(reports,null,2));
+// Create table if not exists
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    anonymous INTEGER,
+    type TEXT,
+    text TEXT,
+    place TEXT,
+    grade TEXT,
+    date TEXT,
+    files TEXT
+  )
+`).run();
+
+// ----- Helper -----
+function saveReport(report){
+  const stmt = db.prepare(`
+    INSERT INTO reports
+    (name, anonymous, type, text, place, grade, date, files)
+    VALUES (@name,@anonymous,@type,@text,@place,@grade,@date,@files)
+  `);
+  stmt.run(report);
 }
 
-// ----- Admin auth middleware -----
+function getReports(filters={}){
+  let sql = 'SELECT * FROM reports WHERE 1=1';
+  const params = {};
+  
+  if(filters.q){
+    sql += ' AND (LOWER(text) LIKE @q OR LOWER(name) LIKE @q OR id LIKE @qExact)';
+    params.q = `%${filters.q.toLowerCase()}%`;
+    params.qExact = `%${filters.q}%`;
+  }
+  if(filters.type){
+    sql += ' AND type=@type';
+    params.type = filters.type;
+  }
+  if(filters.dateFrom){
+    sql += ' AND date>=@dateFrom';
+    params.dateFrom = filters.dateFrom;
+  }
+  if(filters.dateTo){
+    sql += ' AND date<=@dateTo';
+    params.dateTo = filters.dateTo;
+  }
+  
+  const stmt = db.prepare(sql);
+  return stmt.all(params).slice(0,500);
+}
+
+// ----- Middleware -----
 function requireAdmin(req,res,next){
   if(req.session.admin) return next();
-  return res.status(401).json({ message: 'unauthorized' });
+  return res.status(401).json({ message:'unauthorized' });
 }
 
 // ----- Routes -----
 
-// Serve student report page
-app.get('/', (req,res) => {
-  res.sendFile(path.join(__dirname,'public','index.html'));
-});
+// Student page
+app.get('/', (req,res)=> res.sendFile(path.join(__dirname,'public','index.html')));
 
-// Serve admin dashboard page
-app.get('/admin', (req,res) => {
-  res.sendFile(path.join(__dirname,'public','admin.html'));
-});
-
-// Student report submission
+// Submit report
 app.post('/api/report', upload.array('files',5), (req,res)=>{
   try{
-    const reports = loadReports();
-    const files = req.files ? req.files.map(f=> `/uploads/${f.filename}`) : [];
-    const newReport = {
-      id: Date.now(),
+    const files = req.files ? req.files.map(f=> `/uploads/${f.filename}`).join('|') : '';
+    const report = {
       name: req.body.name || null,
-      anonymous: !req.body.name,
+      anonymous: !req.body.name ? 1 : 0,
       type: req.body.type || 'Other',
       text: req.body.description || '',
       place: req.body.place || null,
@@ -85,90 +123,78 @@ app.post('/api/report', upload.array('files',5), (req,res)=>{
       date: new Date().toISOString(),
       files
     };
-    reports.push(newReport);
-    saveReports(reports);
-    res.json({ message: 'Report submitted successfully' });
-  }catch(err){
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    saveReport(report);
+    res.json({ message:'Report submitted successfully' });
+  }catch(e){
+    console.error(e);
+    res.status(500).json({ message:'Server error' });
   }
 });
 
-// Admin login/logout
-app.post('/admin/login', (req,res)=>{
+// ----- Admin API -----
+// Login
+app.post('/api/admin/login', (req,res)=>{
   const { username, password } = req.body;
   if(username===ADMIN_USER && password===ADMIN_PASS){
-    req.session.admin={ user:ADMIN_USER };
+    req.session.admin = { user: ADMIN_USER };
     return res.json({ message:'ok' });
   }
   return res.status(401).json({ message:'Invalid credentials' });
 });
 
-app.get('/admin/logout', (req,res)=>{
+// Logout
+app.get('/api/admin/logout', (req,res)=>{
   req.session.destroy(()=>res.json({ message:'logged out' }));
 });
 
-app.get('/admin/check', (req,res)=>{
+// Check session
+app.get('/api/admin/check', (req,res)=>{
   if(req.session.admin) return res.json({ ok:true });
   return res.status(401).json({ ok:false });
 });
 
-// Admin fetch reports
-app.get('/admin/reports', requireAdmin, (req,res)=>{
-  let reports = loadReports();
-  const { q, dateFrom, dateTo, type } = req.query;
-
-  if(q){
-    const qq = q.toLowerCase();
-    reports = reports.filter(r =>
-      (r.text && r.text.toLowerCase().includes(qq)) ||
-      (r.name && r.name.toLowerCase().includes(qq)) ||
-      r.id.toString().includes(qq)
-    );
+// Fetch reports
+app.get('/api/admin/reports', requireAdmin, (req,res)=>{
+  try{
+    const reports = getReports(req.query);
+    // parse files string back to array
+    reports.forEach(r=> r.files = r.files ? r.files.split('|') : []);
+    res.json(reports);
+  }catch(e){
+    console.error(e);
+    res.status(500).json({ message:'Server error' });
   }
-  if(type) reports = reports.filter(r => r.type === type);
-  if(dateFrom){ const from = new Date(dateFrom); reports = reports.filter(r=> new Date(r.date)>=from); }
-  if(dateTo){ const to = new Date(dateTo); to.setHours(23,59,59,999); reports = reports.filter(r=> new Date(r.date)<=to); }
-
-  res.json(reports.slice(0,500));
 });
 
-// CSV download (include uploaded files)
-app.get('/admin/download', requireAdmin, (req,res)=>{
-  let reports = loadReports();
-  const { q, dateFrom, dateTo, type } = req.query;
-
-  if(q){
-    const qq = q.toLowerCase();
-    reports = reports.filter(r =>
-      (r.text && r.text.toLowerCase().includes(qq)) ||
-      (r.name && r.name.toLowerCase().includes(qq)) ||
-      r.id.toString().includes(qq)
-    );
+// Download CSV
+app.get('/api/admin/download', requireAdmin, (req,res)=>{
+  try{
+    const reports = getReports(req.query).map(r=>({
+      id: r.id,
+      date: r.date,
+      type: r.type,
+      anonymous: r.anonymous,
+      name: r.name||'',
+      grade: r.grade||'',
+      place: r.place||'',
+      text: r.text,
+      files: r.files || ''
+    }));
+    
+    stringify(reports, { header:true }, (err,output)=>{
+      if(err) return res.status(500).send('CSV error');
+      res.header('Content-Type','text/csv');
+      res.attachment('reports.csv');
+      res.send(output);
+    });
+  }catch(e){
+    console.error(e);
+    res.status(500).send('Server error');
   }
-  if(type) reports = reports.filter(r => r.type === type);
-  if(dateFrom){ const from = new Date(dateFrom); reports = reports.filter(r=> new Date(r.date)>=from); }
-  if(dateTo){ const to = new Date(dateTo); to.setHours(23,59,59,999); reports = reports.filter(r=> new Date(r.date)<=to); }
-
-  const csvData = reports.map(r=>({
-    id:r.id,
-    date:r.date,
-    type:r.type,
-    anonymous:r.anonymous,
-    name:r.name||'',
-    grade: r.grade || '',
-    place: r.place || '',
-    text:r.text,
-    files: r.files ? r.files.join('|') : ''
-  }));
-
-  stringify(csvData,{ header:true }, (err,output)=>{
-    if(err) return res.status(500).send('CSV error');
-    res.header('Content-Type','text/csv');
-    res.attachment('reports.csv');
-    res.send(output);
-  });
 });
+
+// Admin page
+app.get('/admin', (req,res)=> res.sendFile(path.join(__dirname,'public','admin.html')));
 
 // Start server
 const PORT = process.env.PORT || 3000;

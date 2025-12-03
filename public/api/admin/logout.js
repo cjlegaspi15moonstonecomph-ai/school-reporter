@@ -1,5 +1,8 @@
-export default function handler(req, res) {
-  // Clear the cookie
-  res.setHeader("Set-Cookie", "admin_auth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
-  return res.status(200).json({ message: "Logged out" });
+// api/admin/logout.js
+import { serialize } from "cookie";
+
+export default function handler(req,res){
+  const cookie = serialize("admin_auth", "", { path: "/", httpOnly: true, maxAge: 0 });
+  res.setHeader("Set-Cookie", cookie);
+  return res.status(200).json({ message: "logged out" });
 }

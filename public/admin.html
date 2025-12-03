@@ -63,26 +63,29 @@ const showApp = () => {
   document.getElementById('adminApp').classList.remove('hidden'); 
 };
 
+/* CHECK SESSION */
 async function checkSession(){
   try {
-    const res = await fetch('/admin/check', { credentials: 'include' });
+    const res = await fetch('/api/admin/check', { credentials: 'include' });
     if(res.ok) showApp(); else showLogin();
   } catch(e){ showLogin(); }
 }
 checkSession();
 
+/* LOGIN */
 document.getElementById('loginForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const username = document.getElementById('username').value;
   const password = document.getElementById('password').value;
 
   try {
-    const res = await fetch('/admin/login', {
+    const res = await fetch('/api/admin/login', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({username,password}),
       credentials:'include'
     });
+
     if(res.ok){ 
       showApp(); 
       await loadReports(); 
@@ -95,8 +98,9 @@ document.getElementById('loginForm').addEventListener('submit', async (e)=>{
   }
 });
 
+/* LOGOUT */
 document.getElementById('logoutBtn').addEventListener('click', async ()=>{
-  await fetch('/admin/logout', { credentials:'include' });
+  await fetch('/api/admin/logout', { credentials:'include' });
   showLogin();
 });
 
@@ -106,10 +110,11 @@ async function loadReports(){
   const dateFrom = document.getElementById('dateFrom').value;
   const dateTo = document.getElementById('dateTo').value;
   const type = document.getElementById('typeFilter').value;
+
   const params = new URLSearchParams({ q, dateFrom, dateTo, type });
 
   try {
-    const res = await fetch('/admin/reports?' + params.toString(), { credentials:'include' });
+    const res = await fetch('/api/admin/reports?' + params.toString(), { credentials:'include' });
     const data = await res.json();
     const list = document.getElementById('reportsList');
     list.innerHTML = '';
@@ -160,7 +165,7 @@ async function loadReports(){
       list.appendChild(d);
     });
 
-    document.getElementById('downloadLink').href = '/admin/download?' + params.toString();
+    document.getElementById('downloadLink').href = '/api/admin/download?' + params.toString();
 
   } catch(e){
     console.error(e);
@@ -176,5 +181,6 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   loadReports();
 });
 </script>
+
 </body>
 </html>

@@ -5,11 +5,14 @@ export default function handler(req, res) {
 
   const { username, password } = req.body;
 
-  // Change these to your own admin credentials
+  // CHANGE TO YOUR REAL CREDENTIALS
   const ADMIN_USER = "admin";
   const ADMIN_PASS = "1234";
 
   if (username === ADMIN_USER && password === ADMIN_PASS) {
+    // Set cookie (session)
+    res.setHeader('Set-Cookie', `admin_auth=true; Path=/; HttpOnly; Max-Age=86400; SameSite=Lax`);
+
     return res.status(200).json({ message: "Login successful" });
   }
 

@@ -30,7 +30,7 @@ const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || '1234';
 
 // ----- Uploads folder -----
-const uploadDir = path.join(__dirname, 'uploads');
+const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 app.use('/uploads', express.static(uploadDir));
 
@@ -44,7 +44,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // ----- Database -----
-const dbFile = path.join(__dirname, 'reports.db');
+const dbFile = path.join(process.cwd(), 'reports.db');
 const db = new Database(dbFile);
 
 // Create table if not exists
@@ -62,7 +62,7 @@ db.prepare(`
   )
 `).run();
 
-// ----- Helper -----
+// ----- Helper functions -----
 function saveReport(report){
   const stmt = db.prepare(`
     INSERT INTO reports
@@ -105,14 +105,13 @@ function requireAdmin(req,res,next){
 }
 
 // ----- Routes -----
-
 // Student page
 app.get('/', (req,res)=> res.sendFile(path.join(__dirname,'public','index.html')));
 
 // Submit report
 app.post('/api/report', upload.array('files',5), (req,res)=>{
   try{
-    const files = req.files ? req.files.map(f=> `/uploads/${f.filename}`).join('|') : '';
+    const files = req.files ? req.files.map(f=> `/uploads/${f.filename}`) : [];
     const report = {
       name: req.body.name || null,
       anonymous: !req.body.name ? 1 : 0,
@@ -121,12 +120,12 @@ app.post('/api/report', upload.array('files',5), (req,res)=>{
       place: req.body.place || null,
       grade: req.body.grade || null,
       date: new Date().toISOString(),
-      files
+      files: files.join('|')
     };
     saveReport(report);
     res.json({ message:'Report submitted successfully' });
   }catch(e){
-    console.error(e);
+    console.error('Report submission error:', e);
     res.status(500).json({ message:'Server error' });
   }
 });
@@ -157,11 +156,10 @@ app.get('/api/admin/check', (req,res)=>{
 app.get('/api/admin/reports', requireAdmin, (req,res)=>{
   try{
     const reports = getReports(req.query);
-    // parse files string back to array
     reports.forEach(r=> r.files = r.files ? r.files.split('|') : []);
     res.json(reports);
   }catch(e){
-    console.error(e);
+    console.error('Fetch reports error:', e);
     res.status(500).json({ message:'Server error' });
   }
 });
@@ -188,7 +186,7 @@ app.get('/api/admin/download', requireAdmin, (req,res)=>{
       res.send(output);
     });
   }catch(e){
-    console.error(e);
+    console.error('CSV download error:', e);
     res.status(500).send('Server error');
   }
 });
@@ -198,4 +196,4 @@ app.get('/admin', (req,res)=> res.sendFile(path.join(__dirname,'public','admin.h
 
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=> console.log('Server running on port', PORT));
+app.listen(PORT, ()=> console.log(`Server running on port ${PORT}`));

@@ -1,49 +1,47 @@
-// api/admin/download.js
-import { db } from "../../../lib/firebaseAdmin.js";
-import jwt from "jsonwebtoken";
+// download.js
+import { stringify } from 'csv-stringify';
+import Database from 'better-sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const JWT_SECRET = process.env.JWT_SECRET || "change_this";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dbFile = path.join(__dirname, '../../../reports.db');
+const db = new Database(dbFile);
 
-function checkAuth(req){
-  const cookie = req.headers.cookie || "";
-  const match = cookie.split(";").map(s=>s.trim()).find(c=>c.startsWith("admin_auth="));
-  if(!match) throw new Error("unauth");
-  const token = match.split("=")[1];
-  jwt.verify(token, JWT_SECRET);
-}
+export default async function handler(req, res) {
+  if(!req.session.admin) return res.status(401).send('Unauthorized');
 
-export default async function handler(req,res){
-  try{
-    checkAuth(req);
-  } catch(e){
-    return res.status(401).send("Unauthorized");
+  const { q, dateFrom, dateTo, type } = req.query;
+  let sql = 'SELECT * FROM reports WHERE 1=1';
+  const params = {};
+
+  if(q){
+    sql += ' AND (LOWER(text) LIKE @q OR LOWER(name) LIKE @q OR id LIKE @qExact)';
+    params.q = `%${q.toLowerCase()}%`;
+    params.qExact = `%${q}%`;
   }
+  if(type) { sql += ' AND type=@type'; params.type = type; }
+  if(dateFrom){ sql += ' AND date >= @dateFrom'; params.dateFrom = dateFrom; }
+  if(dateTo){ sql += ' AND date <= @dateTo'; params.dateTo = dateTo; }
 
-  try{
-    const snapshot = await db.collection("reports").get();
-    const reports = snapshot.docs.map(d=> ({ id: d.id, ...d.data() }));
+  const stmt = db.prepare(sql);
+  const reports = stmt.all(params).map(r => ({
+    id: r.id,
+    date: r.date,
+    type: r.type,
+    anonymous: r.anonymous,
+    name: r.name||'',
+    grade: r.grade||'',
+    place: r.place||'',
+    text: r.text,
+    files: r.files || ''
+  }));
 
-    // Build CSV
-    const header = ["ID","Date","Type","Anonymous","Name","Grade","Place","Description","Files"];
-    const rows = reports.map(r => [
-      r.id,
-      r.date,
-      r.type,
-      !!r.anonymous,
-      r.name || "",
-      r.grade || "",
-      r.place || "",
-      (r.text || "").replace(/\n/g," "),
-      (r.files || []).join("|")
-    ]);
-
-    const csvLines = [header.join(","), ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(","))].join("\n");
-
-    res.setHeader("Content-Type","text/csv");
-    res.setHeader("Content-Disposition","attachment; filename=reports.csv");
-    return res.status(200).send(csvLines);
-  }catch(err){
-    console.error(err);
-    return res.status(500).send("Server error");
-  }
+  stringify(reports, { header:true }, (err, output) => {
+    if(err) return res.status(500).send('CSV error');
+    res.header('Content-Type','text/csv');
+    res.attachment('reports.csv');
+    res.send(output);
+  });
 }

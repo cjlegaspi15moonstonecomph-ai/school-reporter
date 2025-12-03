@@ -1,51 +1,41 @@
-// api/admin/reports.js
-import { db } from "../../../lib/firebaseAdmin.js";
-import jwt from "jsonwebtoken";
+// reports.js
+import Database from 'better-sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const JWT_SECRET = process.env.JWT_SECRET || "change_this";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dbFile = path.join(__dirname, '../../../reports.db');
+const db = new Database(dbFile);
 
-function checkAuth(req){
-  const cookie = req.headers.cookie || "";
-  const match = cookie.split(";").map(s=>s.trim()).find(c=>c.startsWith("admin_auth="));
-  if(!match) throw new Error("unauth");
-  const token = match.split("=")[1];
-  jwt.verify(token, JWT_SECRET);
-}
+export default async function handler(req, res) {
+  if(!req.session.admin) return res.status(401).json({ message:'unauthorized' });
 
-export default async function handler(req,res){
-  try{
-    checkAuth(req);
-  } catch(e){
-    return res.status(401).json({ message: "Unauthorized" });
+  const { q, dateFrom, dateTo, type } = req.query;
+  let sql = 'SELECT * FROM reports WHERE 1=1';
+  const params = {};
+
+  if(q){
+    sql += ' AND (LOWER(text) LIKE @q OR LOWER(name) LIKE @q OR id LIKE @qExact)';
+    params.q = `%${q.toLowerCase()}%`;
+    params.qExact = `%${q}%`;
+  }
+  if(type){
+    sql += ' AND type=@type';
+    params.type = type;
+  }
+  if(dateFrom){
+    sql += ' AND date >= @dateFrom';
+    params.dateFrom = dateFrom;
+  }
+  if(dateTo){
+    sql += ' AND date <= @dateTo';
+    params.dateTo = dateTo;
   }
 
-  try{
-    const { q, dateFrom, dateTo, type } = req.query || {};
-    let ref = db.collection("reports").orderBy("date","desc").limit(500);
-    const snapshot = await ref.get();
-    let reports = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  const stmt = db.prepare(sql);
+  const reports = stmt.all(params).slice(0,500);
+  reports.forEach(r => r.files = r.files ? r.files.split('|') : []);
 
-    if(q){
-      const qq = q.toLowerCase();
-      reports = reports.filter(r =>
-        (r.text && r.text.toLowerCase().includes(qq)) ||
-        (r.name && r.name.toLowerCase().includes(qq)) ||
-        (r.id && r.id.toString().includes(qq))
-      );
-    }
-    if(type) reports = reports.filter(r => r.type === type);
-    if(dateFrom){
-      const from = new Date(dateFrom);
-      reports = reports.filter(r => new Date(r.date) >= from);
-    }
-    if(dateTo){
-      const to = new Date(dateTo); to.setHours(23,59,59,999);
-      reports = reports.filter(r => new Date(r.date) <= to);
-    }
-
-    return res.status(200).json(reports);
-  }catch(err){
-    console.error(err);
-    return res.status(500).json({ message: "Server error" });
-  }
+  res.status(200).json(reports);
 }

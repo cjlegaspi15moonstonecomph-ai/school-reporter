@@ -1,47 +1,42 @@
-// download.js
-import { stringify } from 'csv-stringify';
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dbFile = path.join(__dirname, '../../../reports.db');
-const db = new Database(dbFile);
+import jwt from "jsonwebtoken";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+import { stringify } from "csv-stringify";
+const SECRET = process.env.JWT_SECRET || "supersecret";
 
 export default async function handler(req, res) {
-  if(!req.session.admin) return res.status(401).send('Unauthorized');
+  if (req.method !== "GET")
+    return res.status(405).json({ message: "Method Not Allowed" });
 
-  const { q, dateFrom, dateTo, type } = req.query;
-  let sql = 'SELECT * FROM reports WHERE 1=1';
-  const params = {};
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Unauthorized" });
 
-  if(q){
-    sql += ' AND (LOWER(text) LIKE @q OR LOWER(name) LIKE @q OR id LIKE @qExact)';
-    params.q = `%${q.toLowerCase()}%`;
-    params.qExact = `%${q}%`;
+  try {
+    jwt.verify(token, SECRET);
+
+    const db = await open({ filename: "./reports.db", driver: sqlite3.Database });
+    const rows = await db.all(`SELECT * FROM reports`);
+
+    const csvRecords = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      anonymous: r.anonymous,
+      type: r.type,
+      text: r.text,
+      place: r.place,
+      grade: r.grade,
+      date: r.date,
+      files: r.files,
+    }));
+
+    stringify(csvRecords, { header: true }, (err, output) => {
+      if (err) return res.status(500).send("CSV error");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=reports.csv");
+      res.send(output);
+    });
+  } catch {
+    res.status(401).json({ message: "Unauthorized" });
   }
-  if(type) { sql += ' AND type=@type'; params.type = type; }
-  if(dateFrom){ sql += ' AND date >= @dateFrom'; params.dateFrom = dateFrom; }
-  if(dateTo){ sql += ' AND date <= @dateTo'; params.dateTo = dateTo; }
-
-  const stmt = db.prepare(sql);
-  const reports = stmt.all(params).map(r => ({
-    id: r.id,
-    date: r.date,
-    type: r.type,
-    anonymous: r.anonymous,
-    name: r.name||'',
-    grade: r.grade||'',
-    place: r.place||'',
-    text: r.text,
-    files: r.files || ''
-  }));
-
-  stringify(reports, { header:true }, (err, output) => {
-    if(err) return res.status(500).send('CSV error');
-    res.header('Content-Type','text/csv');
-    res.attachment('reports.csv');
-    res.send(output);
-  });
 }

@@ -1,41 +1,35 @@
-// reports.js
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dbFile = path.join(__dirname, '../../../reports.db');
-const db = new Database(dbFile);
+import jwt from "jsonwebtoken";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+const SECRET = process.env.JWT_SECRET || "supersecret";
 
 export default async function handler(req, res) {
-  if(!req.session.admin) return res.status(401).json({ message:'unauthorized' });
+  if (req.method !== "GET")
+    return res.status(405).json({ message: "Method Not Allowed" });
 
-  const { q, dateFrom, dateTo, type } = req.query;
-  let sql = 'SELECT * FROM reports WHERE 1=1';
-  const params = {};
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ ok: false });
 
-  if(q){
-    sql += ' AND (LOWER(text) LIKE @q OR LOWER(name) LIKE @q OR id LIKE @qExact)';
-    params.q = `%${q.toLowerCase()}%`;
-    params.qExact = `%${q}%`;
-  }
-  if(type){
-    sql += ' AND type=@type';
-    params.type = type;
-  }
-  if(dateFrom){
-    sql += ' AND date >= @dateFrom';
-    params.dateFrom = dateFrom;
-  }
-  if(dateTo){
-    sql += ' AND date <= @dateTo';
-    params.dateTo = dateTo;
-  }
+  try {
+    jwt.verify(token, SECRET);
 
-  const stmt = db.prepare(sql);
-  const reports = stmt.all(params).slice(0,500);
-  reports.forEach(r => r.files = r.files ? r.files.split('|') : []);
+    const q = req.query.q ? `%${req.query.q.toLowerCase()}%` : null;
 
-  res.status(200).json(reports);
+    const db = await open({ filename: "./reports.db", driver: sqlite3.Database });
+    let rows = await db.all(
+      `SELECT * FROM reports
+       WHERE (LOWER(text) LIKE COALESCE(?, LOWER(text))
+       OR LOWER(name) LIKE COALESCE(?, LOWER(name)))`,
+      [q, q]
+    );
+
+    rows = rows.map((r) => ({
+      ...r,
+      files: r.files ? r.files.split("|") : [],
+    }));
+
+    res.json(rows);
+  } catch {
+    res.status(401).json({ ok: false });
+  }
 }
